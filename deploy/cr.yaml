@@ -1,0 +1,4 @@
+apiVersion: "c2cloud/v1alpha1"
+kind: "Kong"
+metadata:
+  name: "example"
