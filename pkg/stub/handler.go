@@ -69,9 +69,63 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		if !event.Deleted && pod.Status.Phase != v1.PodRunning {
 			return nil
 		}
+		kongs, err := queryKong(pod.Namespace)
+		if err != nil {
+			logrus.Errorf("Error during querying kongs in namespace '%s': %v", pod.Namespace, err)
+			return err
+		}
+		kongcrd, err := findKongForPod(kongs, pod)
+		if err != nil {
+			return err
+		}
+		if kongcrd == nil {
+			return nil
+		}
+		if event.Deleted {
+			//pod delete, need 2 delete target
+			return processDeletePod(pod, kongcrd)
+		}
+		if isVerified(pod, kongcrd.Name) {
+			logrus.Infof("Ignoring pod '%s/%s' as it has already been processed.", pod.Namespace, pod.Name)
+		} else {
+			err := processPod(pod, kongcrd)
+			if err != nil {
+				return err
+			}
+		}
 
 	}
 	return nil
+}
+
+func findKongForPod(kongList *v1alpha1.KongList, pod *v1.Pod) (*v1alpha1.Kong, error) {
+	var matchIdx []int
+
+	for i := 0; i < len(kongList.Items); i++ {
+		kong := kongList.Items[i]
+
+		selector := labels.SelectorFromSet(kong.Spec.LabelSelector)
+		if selector.Matches(labels.Set(pod.Labels)) {
+			matchIdx = append(matchIdx, i)
+		}
+	}
+
+	if len(matchIdx) > 1 {
+		var list []v1alpha1.Kong
+		for _, idx := range matchIdx {
+			list = append(list, kongList.Items[idx])
+		}
+		logrus.Errorf("Multiple kongs for pod '%s/%s' found: %s",
+			pod.Namespace, pod.Name, formatSimpleKongs(list))
+
+		return nil, fmt.Errorf("multiple kongs for pod '%s/%s' found", pod.Namespace, pod.Namespace)
+	}
+
+	if len(matchIdx) == 0 {
+		return nil, nil
+	}
+
+	return &kongList.Items[matchIdx[0]], nil
 }
 
 // processPods loads or update each pod address info upstream and target
@@ -94,10 +148,56 @@ func processPods(pods []v1.Pod, kong *v1alpha1.Kong) {
 	logrus.Info("Processing pods finished.")
 }
 
-// processPod loads prometheus jmx exporter agent into the pod
+func processDeletePod(pod *v1.Pod, kong *v1alpha1.Kong) error {
+	logrus.Infof("Delete pod '%s'", pod.Name)
+	upstream := genUpstreamName(pod)
+	ip := pod.Status.PodIP
+	ports, err := queryPodTargetPorts(pod)
+	if err != nil {
+		return err
+	}
+	portslen := len(ports)
+	if portslen > 1 {
+		for i := 0; i < portslen; i++ {
+			err = deleteKongTarget(kong, fmt.Sprintf("%s-%d", upstream, ports[i]), fmt.Sprintf("%s:%d", ip, ports[i]))
+			if err != nil {
+				return err
+			}
+		}
+	} else if portslen == 1 {
+		err = deleteKongTarget(kong, upstream, fmt.Sprintf("%s:%d", ip, ports[0]))
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func deleteKongTarget(kong *v1alpha1.Kong, upstreamName string, target string) error {
+	kongClient, err := kongcli.NewRESTClient(&rest.Config{
+		Host:     kong.Spec.KongURL,
+		Username: kong.Spec.Username,
+		Password: kong.Spec.Password,
+		Timeout:  0,
+	})
+	if err != nil {
+		logrus.Errorf("Error creating Kong Rest client: %v", err)
+		return err
+	}
+	logrus.Infof("Delete upstream '%s' target '%s'", upstreamName, target)
+	err = kongClient.Targets().Delete(upstreamName, target)
+	if err != nil {
+		logrus.Errorf("Error delete Kong target: %v", err)
+		return err
+	}
+	return nil
+}
+
 func processPod(pod *v1.Pod, kong *v1alpha1.Kong) error {
 	logrus.Infof("Inspecting pod '%s'", pod.Name)
 	upstream := genUpstreamName(pod)
+	apiUri := getApiUri(pod)
 	ip := pod.Status.PodIP
 	ports, err := queryPodTargetPorts(pod)
 	if err != nil {
@@ -110,7 +210,7 @@ func processPod(pod *v1.Pod, kong *v1alpha1.Kong) error {
 		for i := 0; i < portslen; i++ {
 			//TODO operator挂了或重启了，期间有pod，删除了，怎么删除target，pod新增的话，编辑下CRD就可以了
 			//TODO 还是要使用到状态 KongStatus记录target, 同时启动的时候要做同步
-			err = dealKongTarget(kong, fmt.Sprintf("%s-%d", upstream, ports[i]), fmt.Sprintf("%s:%d", ip, ports[i]))
+			err = dealKongTarget(kong, fmt.Sprintf("%s-%d", upstream, ports[i]), fmt.Sprintf("%s:%d", ip, ports[i]), apiUri)
 			if err != nil {
 				logrus.Infof("Mark pod '%s' as verify failed", pod.Name)
 				podVerifiedFailed(pod, kong.Name)
@@ -118,7 +218,7 @@ func processPod(pod *v1.Pod, kong *v1alpha1.Kong) error {
 			}
 		}
 	} else if portslen == 1 {
-		err = dealKongTarget(kong, upstream, fmt.Sprintf("%s:%d", ip, ports[0]))
+		err = dealKongTarget(kong, upstream, fmt.Sprintf("%s:%d", ip, ports[0]), apiUri)
 		if err != nil {
 			logrus.Infof("Mark pod '%s' as verify failed", pod.Name)
 			podVerifiedFailed(pod, kong.Name)
@@ -131,8 +231,7 @@ func processPod(pod *v1.Pod, kong *v1alpha1.Kong) error {
 	return podVerified(pod, kong.Name)
 }
 
-func dealKongTarget(kong *v1alpha1.Kong, upstreamName string, target string) error {
-	//TODO
+func dealKongTarget(kong *v1alpha1.Kong, upstreamName string, target string, apiUri string) error {
 	kongClient, err := kongcli.NewRESTClient(&rest.Config{
 		Host:     kong.Spec.KongURL,
 		Username: kong.Spec.Username,
@@ -173,11 +272,31 @@ func dealKongTarget(kong *v1alpha1.Kong, upstreamName string, target string) err
 		logrus.Infof("creating Kong Target %v for upstream %v", target, b.ID)
 		_, res := kongClient.Targets().Create(target, upstreamName)
 		if res.StatusCode != http.StatusCreated {
-			logrus.Errorf("Unexpected error creating Kong Upstream: %v", res)
+			logrus.Errorf("Unexpected error creating Kong Target: %v", res)
 			return res.Error()
 		}
 	}
 
+	//TODO add kongAnnotationApiUriKey
+	if apiUri != "" {
+		_, res := kongClient.Apis().Get(upstreamName)
+		if res.StatusCode == http.StatusNotFound {
+			api := &kongadminv1.Api{
+				Name:        upstreamName,
+				Hosts:       []string{},
+				Uris:        []string{apiUri},
+				Methods:     []string{"GET", "POST", "DELETE", "PUT", "PATCH", "OPTIONS"},
+				UpstreamUrl: fmt.Sprintf("http://%s", upstreamName),
+				StripUri:    true,
+			}
+			logrus.Infof("creating Kong apis %s for upstream %s", apiUri, b.ID)
+			_, res := kongClient.Apis().Create(api)
+			if res.StatusCode != http.StatusCreated {
+				logrus.Errorf("Unexpected error creating Kong Apis: %v", res)
+				return res.Error()
+			}
+		}
+	}
 	return nil
 }
 
@@ -239,6 +358,15 @@ func queryPodTargetPorts(pod *v1.Pod) ([]int, error) {
 		}
 	}
 }
+
+func getApiUri(pod *v1.Pod) string {
+	v, ok := pod.Annotations[kongAnnotationApiUriKey]
+	if ok {
+		return v
+	}
+	return ""
+}
+
 func genUpstreamName(pod *v1.Pod) string {
 	v, ok := pod.Annotations[kongAnnotationUpstreamNameKey]
 	if ok {
@@ -398,6 +526,22 @@ func formatSimplePods(pods []v1.Pod) string {
 			buffer.WriteString(",")
 		}
 		buffer.WriteString(pod.Name)
+	}
+	buffer.WriteString(")")
+
+	return buffer.String()
+}
+
+func formatSimpleKongs(kongs []v1alpha1.Kong) string {
+	var buffer bytes.Buffer
+	buffer.WriteString("(")
+	for i := 0; i < len(kongs); i++ {
+		kong := kongs[i]
+
+		if i != 0 {
+			buffer.WriteString(",")
+		}
+		buffer.WriteString(kong.Name)
 	}
 	buffer.WriteString(")")
 

@@ -17,6 +17,7 @@ type KongInterface interface {
 	RouteGetter
 	ServiceGetter
 	UpstreamGetter
+	ApisGetter
 	TargetGetter
 	SNIGetter
 	CertificateGetter
@@ -61,6 +62,17 @@ func (c *RestClient) Upstreams() UpstreamInterface {
 		client: &apiClient{c.RESTClient(),
 			&metav1.APIResource{
 				Name:       "upstreams",
+				Namespaced: false,
+			},
+		},
+	}
+}
+
+func (c *RestClient) Apis() ApiInterface {
+	return &apiAPI{
+		client: &apiClient{c.RESTClient(),
+			&metav1.APIResource{
+				Name:       "apis",
 				Namespaced: false,
 			},
 		},
