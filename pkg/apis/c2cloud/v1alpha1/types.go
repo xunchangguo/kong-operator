@@ -22,8 +22,18 @@ type Kong struct {
 }
 
 type KongSpec struct {
-	// Fill me
+	KongURL  string `json: kongURL,required`
+	Username string `json: username,omitempty`
+	Password string `json: password,omitempty`
+	//InsecureSkipVerify bool              `json: insecureSkipVerify,omitempty`
+	LabelSelector map[string]string `json:"labelSelector,omitempty"`
 }
 type KongStatus struct {
 	// Fill me
+	TargetPods []*TargetPods `json: targetPods,omitempty`
+}
+
+type TargetPods struct {
+	Pod     string `json:"pod,required"`
+	Address string `json:"address,required"`
 }

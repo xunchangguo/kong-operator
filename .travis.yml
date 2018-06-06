@@ -1,0 +1,33 @@
+language: go
+sudo: false
+notifications:
+  email: false
+jobs:
+  include:
+    - go: 1.10.1
+      stage: deploy
+      go_import_path: github.com/xunchangguo/kong-operator
+      services:
+        - docker
+      install: skip
+      script: skip
+      before_deploy:
+#        - go get -u github.com/golang/dep/cmd/dep
+#        - dep ensure
+        - chmod +x ./tmp/codegen/update-generated.sh
+        - ./tmp/codegen/update-generated.sh
+        - chmod +x ./hack/save.bash
+        - ./hack/save.bash
+      deploy:
+        - provider: releases
+          api_key:
+            secure: "E9SlGUMKrkM+CnCXrZaTYbAVn3UukaKs/Oh//LBmZ1OCWmU1A0WsOMaWS8Oi+AJdWqUqtdgPVlQ3bbXJcfyPc5FDNiSpvS9abWPUwxTXL5CNQd0Kx01EWOsA6s7UeVbrq3S2aWL6zCwM5MUWInK3jt2W12h88iva7J1O5Rxe/DmtJOWAVo/NphJCkJzMwBVGHuxakbphpNdOwiZmQQexGO3ZMkkvY/LC74LpNi8Hg91gXZut0WOlNSJY+KL0GHNcqSjeL/jGbojtk1ckSrdjFEiF+fmmE2A2aey/Gk9gumA+6wsiJ/yss/gEv/nM05eW3HjubuuFNjCzbyWYN6bn9HstPT+AnoPwCRqjzBftsCJrq6uP8pSB/FnmYY5eU4BXPmI346GaXKipEiaqe4y4ZGJztRrpflvL5aPJP+mvLANMQPJkwpmSv0wwnthxWEoQp85shX2YgHy8W8b3Kh/WKeOYgPc3/mBycLzwf8w5E6ij7FPEmYYkknwsTs0ytKobbwNVXqGgochSu95z4i3/WcjtqvvjtwftTaljkRL0OHpDTvVO1+y92RG0knf/+Qr4MEr+PauS4o6t0NdiLeieUZzasF0FiWEyerj89qE7Upw09LkBmnNjb4+SvLVSaVkLL1SuAHy6x7aVv0d48Z+C2+OPccabXcgXU373EJjcpRI="
+          file_glob: true
+          file: release/*
+          skip_cleanup: true
+          on:
+            repo: xunchangguo/kong-operator
+            branch: master
+            tags: true
+addons:
+  ssh_known_hosts: github.com

@@ -4,12 +4,13 @@ import (
 	"context"
 	"runtime"
 
-	stub "github.com/xunchangguo/kong-operator/pkg/stub"
 	sdk "github.com/operator-framework/operator-sdk/pkg/sdk"
 	k8sutil "github.com/operator-framework/operator-sdk/pkg/util/k8sutil"
 	sdkVersion "github.com/operator-framework/operator-sdk/version"
+	stub "github.com/xunchangguo/kong-operator/pkg/stub"
 
 	"github.com/sirupsen/logrus"
+	"k8s.io/api/core/v1"
 )
 
 func printVersion() {
@@ -27,9 +28,12 @@ func main() {
 	if err != nil {
 		logrus.Fatalf("Failed to get watch namespace: %v", err)
 	}
+	//TODO 要做kong target的同步处理， 查询出所有crd，和kong做同步
 	resyncPeriod := 5
 	logrus.Infof("Watching %s, %s, %s, %d", resource, kind, namespace, resyncPeriod)
 	sdk.Watch(resource, kind, namespace, resyncPeriod)
+	logrus.Infof("Watching v1, Pod, %s, %d", v1.NamespaceAll, 0)
+	sdk.Watch("v1", "Pod", v1.NamespaceAll, 0)
 	sdk.Handle(stub.NewHandler())
 	sdk.Run(context.TODO())
 }
