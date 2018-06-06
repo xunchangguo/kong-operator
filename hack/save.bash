@@ -10,4 +10,4 @@ DEP_ROOT=$(git rev-parse --show-toplevel)
 mkdir -p "${DEP_ROOT}/release"
 
 cd "${DEP_ROOT}/release/"
-tar -jcvf kong-operator.tar.bz2 /go/src/github.com/xunchangguo/kong-operator/
+tar -jcvf kong-operator.tar.bz2 $HOME/gopath/src/github.com/xunchangguo/kong-operator/
