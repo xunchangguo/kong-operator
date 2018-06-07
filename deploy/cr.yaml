@@ -2,3 +2,7 @@ apiVersion: "c2cloud/v1alpha1"
 kind: "Kong"
 metadata:
   name: "example"
+spec:
+  labelSelector:
+    app: dummyapp
+  KongURL: http://127.0.0.1:8001

@@ -11,3 +11,30 @@ spec:
     singular: kong
   scope: Namespaced
   version: v1alpha1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kong-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: kong-operator
+  template:
+    metadata:
+      labels:
+        name: kong-operator
+    spec:
+      serviceAccountName: kong-operator
+      containers:
+        - name: kong-operator
+          image: xunchangguo/kong-operator:v0.0.1
+          env:
+          - name: OPERATOR_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          command:
+          - kong-operator
+          imagePullPolicy: IfNotPresent

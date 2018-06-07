@@ -169,7 +169,6 @@ type Target struct {
 	Upstream string `json:"upstream_id"`
 }
 
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 type Api struct {
 	Required `json:",inline"`
 
@@ -188,7 +187,6 @@ type Api struct {
 	HttpIfTerminated       bool     `json:"http_if_terminated,omitempty"`
 }
 
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 type ApiList struct {
 	RequiredList `json:",inline"`
 
