@@ -186,7 +186,7 @@ func deleteKongTarget(kong *v1alpha1.Kong, upstreamName string, target string) e
 		return err
 	}
 	logrus.Infof("Delete upstream '%s' target '%s'", upstreamName, target)
-	err = kongClient.Targets().Delete(upstreamName, target)
+	err = kongClient.Targets().Delete(target, upstreamName)
 	if err != nil {
 		logrus.Errorf("Error delete Kong target: %v", err)
 		return err
@@ -232,6 +232,7 @@ func processPod(pod *v1.Pod, kong *v1alpha1.Kong) error {
 }
 
 func dealKongTarget(kong *v1alpha1.Kong, upstreamName string, target string, apiUri string) error {
+	logrus.Infof("deal Kong target upstream: %v, target: %s, api: %s", upstreamName, target, apiUri)
 	kongClient, err := kongcli.NewRESTClient(&rest.Config{
 		Host:     kong.Spec.KongURL,
 		Username: kong.Spec.Username,
@@ -302,7 +303,8 @@ func dealKongTarget(kong *v1alpha1.Kong, upstreamName string, target string, api
 
 func queryPodTargetPorts(pod *v1.Pod) ([]int, error) {
 	csize := len(pod.Spec.Containers)
-	v, ok := pod.Annotations[kongAnnotationTargetPortKey]
+	v, ok := pod.Labels[kongAnnotationTargetPortKey]
+	//v, ok := pod.Annotations[kongAnnotationTargetPortKey]
 	if ok {
 		port, err := strconv.Atoi(v)
 		if err != nil {
@@ -360,9 +362,10 @@ func queryPodTargetPorts(pod *v1.Pod) ([]int, error) {
 }
 
 func getApiUri(pod *v1.Pod) string {
-	v, ok := pod.Annotations[kongAnnotationApiUriKey]
+	v, ok := pod.Labels[kongAnnotationApiUriKey]
+	//v, ok := pod.Annotations[kongAnnotationApiUriKey]
 	if ok {
-		return v
+		return "/" + v + "/*"
 	}
 	return ""
 }
@@ -467,7 +470,7 @@ func queryKong(namespace string) (*v1alpha1.KongList, error) {
 	kongList := v1alpha1.KongList{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Kong",
-			APIVersion: "c2cloud/v1alpha1",
+			APIVersion: "c2cloud.com/v1alpha1",
 		},
 	}
 

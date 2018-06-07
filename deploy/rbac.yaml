@@ -4,7 +4,7 @@ metadata:
   name: kong-operator
 rules:
 - apiGroups:
-  - c2cloud
+  - c2cloud.com
   resources:
   - "*"
   verbs:

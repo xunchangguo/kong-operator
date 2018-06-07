@@ -1,9 +1,9 @@
 apiVersion: apiextensions.k8s.io/v1beta1
 kind: CustomResourceDefinition
 metadata:
-  name: kongs.c2cloud
+  name: kongs.c2cloud.com
 spec:
-  group: c2cloud
+  group: c2cloud.com
   names:
     kind: Kong
     listKind: KongList
@@ -29,9 +29,9 @@ spec:
       serviceAccountName: kong-operator
       containers:
         - name: kong-operator
-          image: xunchangguo/kong-operator:v0.0.1
+          image: xunchangguo/kong-operator:v0.0.2
           env:
-          - name: OPERATOR_NAMESPACE
+          - name: WATCH_NAMESPACE
             valueFrom:
               fieldRef:
                 fieldPath: metadata.namespace

@@ -10,7 +10,7 @@ import (
 
 const (
 	version   = "v1alpha1"
-	groupName = "c2cloud"
+	groupName = "c2cloud.com"
 )
 
 var (

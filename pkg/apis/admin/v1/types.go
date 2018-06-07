@@ -108,10 +108,10 @@ type ServiceList struct {
 
 func NewUpstream(name string) *Upstream {
 	return &Upstream{
-		Name:         name,
-		HashOn:       "none",
-		HashFallback: "none",
-		Slots:        1000,
+		Name: name,
+		//		HashOn:       "none",
+		//		HashFallback: "none",
+		Slots: 1000,
 	}
 }
 
