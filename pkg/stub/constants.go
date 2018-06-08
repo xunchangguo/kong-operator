@@ -4,6 +4,7 @@ const (
 	kongAnnotationUpstreamNameKey = "upstream-name"
 	kongAnnotationTargetPortKey   = "target-port"
 	kongAnnotationApiUriKey       = "api-uri"
+	kongAnnotationPodIpKey        = "pod-ip"
 
 	kongAnnotationVerified       = "verified"
 	kongAnnotationVerifiedFailed = "verified-failed"

@@ -172,19 +172,19 @@ type Target struct {
 type Api struct {
 	Required `json:",inline"`
 
-	Name                   string   `json:"name"`
-	Hosts                  []string `json:"hosts"`
-	Uris                   []string `json:"uris"`
-	Methods                []string `json:"methods"`
-	UpstreamUrl            string   `json:"upstream_url"`
-	StripUri               bool     `json:"strip_uri,omitempty"`
-	PreserveHost           bool     `json:"preserve_host,omitempty"`
-	Retries                int      `json:"retries,omitempty"`
-	UpstreamConnectTimeout int      `json:"upstream_connect_timeout,omitempty"`
-	UpstreamSendTimeout    int      `json:"upstream_send_timeout,omitempty"`
-	UpstreamReadTimeout    int      `json:"upstream_read_timeout,omitempty"`
-	HttpsOnly              bool     `json:"https_only,omitempty"`
-	HttpIfTerminated       bool     `json:"http_if_terminated,omitempty"`
+	Name                   string            `json:"name"`
+	Hosts                  map[string]string `json:"hosts"`
+	Uris                   []string          `json:"uris"`
+	Methods                []string          `json:"methods"`
+	UpstreamUrl            string            `json:"upstream_url"`
+	StripUri               bool              `json:"strip_uri,omitempty"`
+	PreserveHost           bool              `json:"preserve_host,omitempty"`
+	Retries                int               `json:"retries,omitempty"`
+	UpstreamConnectTimeout int               `json:"upstream_connect_timeout,omitempty"`
+	UpstreamSendTimeout    int               `json:"upstream_send_timeout,omitempty"`
+	UpstreamReadTimeout    int               `json:"upstream_read_timeout,omitempty"`
+	HttpsOnly              bool              `json:"https_only,omitempty"`
+	HttpIfTerminated       bool              `json:"http_if_terminated,omitempty"`
 }
 
 type ApiList struct {

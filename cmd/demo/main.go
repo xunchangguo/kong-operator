@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 
 	kongcli "github.com/xunchangguo/kong-operator/pkg/apis/admin"
 	kongadminv1 "github.com/xunchangguo/kong-operator/pkg/apis/admin/v1"
@@ -13,7 +14,7 @@ import (
 
 func main() {
 	kongClient, err := kongcli.NewRESTClient(&rest.Config{
-		Host:     "http://172.17.80.37:8001",
+		Host:     "http://192.168.137.61:8001",
 		Username: "",
 		Password: "",
 		Timeout:  0,
@@ -21,60 +22,33 @@ func main() {
 	if err != nil {
 		logrus.Errorf("Error creating Kong Rest client: %v", err)
 	}
-	upstreamName := "kube-system-echoserver"
-	target := "127.0.0.1:8080"
-	apiUri := "/echoserver"
-	b, res := kongClient.Upstreams().Get(upstreamName)
-	if res.StatusCode == http.StatusNotFound {
-		upstream := kongadminv1.NewUpstream(upstreamName)
-		b, res = kongClient.Upstreams().Create(upstream)
-		if res.StatusCode != http.StatusCreated {
-			logrus.Errorf("Unexpected error creating Kong Upstream: %v", res)
-		}
-	}
-	fmt.Printf("%v", b)
-	kongTargets, err := kongClient.Targets().List(nil, upstreamName)
+	upstreamName := "kube-system-echoserver1"
+	//	target := "127.0.0.1:8080"
+	apiUri := "/echoserver1"
+	apits, err := kongClient.Apis().List(url.Values{
+		"upstream_url": []string{"http://kube-system-echoserver"},
+	})
 	if err != nil {
-		return
-	}
-	has := false
-	for _, kongTarget := range kongTargets.Items {
-		if target == kongTarget.Target {
-			has = true
-			break
-		}
-	}
-	if has == false {
-		target := &kongadminv1.Target{
-			Target:   target,
-			Upstream: b.ID,
-		}
-		logrus.Infof("creating Kong Target %v for upstream %v", target, b.ID)
-		_, res := kongClient.Targets().Create(target, upstreamName)
-		if res.StatusCode != http.StatusCreated {
-			logrus.Errorf("Unexpected error creating Kong Target: %v", res)
-			return
+		logrus.Errorf("Error List apis: %v", err)
+		fmt.Errorf("%v", err)
+	} else {
+		for _, api := range apits.Items {
+			fmt.Printf("%v", api)
+			logrus.Infof("%v", err)
 		}
 	}
 
-	//TODO add kongAnnotationApiUriKey
-	if apiUri != "" {
-		_, res := kongClient.Apis().Get(upstreamName)
-		if res.StatusCode == http.StatusNotFound {
-			api := &kongadminv1.Api{
-				Name:        upstreamName,
-				Hosts:       []string{},
-				Uris:        []string{apiUri},
-				Methods:     []string{"GET", "POST", "DELETE", "PUT", "PATCH", "OPTIONS"},
-				UpstreamUrl: fmt.Sprintf("http://%s", upstreamName),
-				StripUri:    true,
-			}
-			logrus.Infof("creating Kong apis %s for upstream %s", apiUri, b.ID)
-			_, res := kongClient.Apis().Create(api)
-			if res.StatusCode != http.StatusCreated {
-				logrus.Errorf("Unexpected error creating Kong Apis: %v", res)
-				return
-			}
-		}
+	api := &kongadminv1.Api{
+		Name:        upstreamName,
+		Hosts:       map[string]string{},
+		Uris:        []string{apiUri},
+		Methods:     []string{"GET", "POST", "DELETE", "PUT", "PATCH", "OPTIONS"},
+		UpstreamUrl: fmt.Sprintf("http://%s", upstreamName),
+		StripUri:    true,
 	}
+	_, res := kongClient.Apis().Create(api)
+	if res.StatusCode != http.StatusCreated {
+		logrus.Errorf("Unexpected error creating Kong Apis: %v", res)
+	}
+
 }

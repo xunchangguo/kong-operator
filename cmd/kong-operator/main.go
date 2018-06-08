@@ -10,7 +10,7 @@ import (
 	stub "github.com/xunchangguo/kong-operator/pkg/stub"
 
 	"github.com/sirupsen/logrus"
-	//	"k8s.io/api/core/v1"
+	"k8s.io/api/core/v1"
 )
 
 func printVersion() {
@@ -32,11 +32,10 @@ func main() {
 	resyncPeriod := 0 //5
 	logrus.Infof("Watching %s, %s, %s, %d", resource, kind, namespace, resyncPeriod)
 	sdk.Watch(resource, kind, namespace, resyncPeriod)
-	logrus.Infof("Watching v1, Pod, %s, %d", namespace, resyncPeriod)
-	sdk.Watch("v1", "Pod", namespace, resyncPeriod)
-	// watch v1.NamespaceAll 有问题？
-	//	logrus.Infof("Watching v1, Pod, %s, %d", v1.NamespaceAll, resyncPeriod)
-	//	sdk.Watch("v1", "Pod", v1.NamespaceAll, resyncPeriod)
+	//logrus.Infof("Watching v1, Pod, %s, %d", namespace, resyncPeriod)
+	//sdk.Watch("v1", "Pod", namespace, resyncPeriod)
+	logrus.Infof("Watching v1, Pod, %s, %d", v1.NamespaceAll, resyncPeriod)
+	sdk.Watch("v1", "Pod", v1.NamespaceAll, resyncPeriod)
 	sdk.Handle(stub.NewHandler())
 	sdk.Run(context.TODO())
 }

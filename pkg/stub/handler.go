@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -81,12 +82,18 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		if kongcrd == nil {
 			return nil
 		}
-		if event.Deleted {
-			//pod delete, need 2 delete target
-			return processDeletePod(pod, kongcrd)
-		}
 		if isVerified(pod, kongcrd.Name) {
-			logrus.Infof("Ignoring pod '%s/%s' as it has already been processed.", pod.Namespace, pod.Name)
+			if event.Deleted {
+				//pod delete, need 2 delete target
+				switch event.Object.(type) {
+				case *v1.Pod:
+					return processDeletePod(event.Object.(*v1.Pod), kongcrd)
+				}
+				//return processDeletePod(pod, kongcrd)
+			} else {
+				logrus.Infof("Ignoring pod '%s/%s' as it has already been processed.", pod.Namespace, pod.Name)
+				return nil
+			}
 		} else {
 			err := processPod(pod, kongcrd)
 			if err != nil {
@@ -151,7 +158,8 @@ func processPods(pods []v1.Pod, kong *v1alpha1.Kong) {
 func processDeletePod(pod *v1.Pod, kong *v1alpha1.Kong) error {
 	logrus.Infof("Delete pod '%s'", pod.Name)
 	upstream := genUpstreamName(pod)
-	ip := pod.Status.PodIP
+	ip := getPodIp(pod)
+
 	ports, err := queryPodTargetPorts(pod)
 	if err != nil {
 		return err
@@ -174,6 +182,16 @@ func processDeletePod(pod *v1.Pod, kong *v1alpha1.Kong) error {
 	return nil
 }
 
+func getPodIp(pod *v1.Pod) string {
+	ip := pod.Status.PodIP
+	if ip == "" {
+		v, ok := pod.Annotations[kongAnnotationPodIpKey]
+		if ok {
+			return v
+		}
+	}
+	return ip
+}
 func deleteKongTarget(kong *v1alpha1.Kong, upstreamName string, target string) error {
 	kongClient, err := kongcli.NewRESTClient(&rest.Config{
 		Host:     kong.Spec.KongURL,
@@ -202,7 +220,7 @@ func processPod(pod *v1.Pod, kong *v1alpha1.Kong) error {
 	ports, err := queryPodTargetPorts(pod)
 	if err != nil {
 		logrus.Infof("Mark pod '%s' as verify failed", pod.Name)
-		podVerifiedFailed(pod, kong.Name)
+		podVerifiedFailed(pod, kong.Name, ip)
 		return err
 	}
 	portslen := len(ports)
@@ -213,7 +231,7 @@ func processPod(pod *v1.Pod, kong *v1alpha1.Kong) error {
 			err = dealKongTarget(kong, fmt.Sprintf("%s-%d", upstream, ports[i]), fmt.Sprintf("%s:%d", ip, ports[i]), apiUri)
 			if err != nil {
 				logrus.Infof("Mark pod '%s' as verify failed", pod.Name)
-				podVerifiedFailed(pod, kong.Name)
+				podVerifiedFailed(pod, kong.Name, ip)
 				return err
 			}
 		}
@@ -221,18 +239,18 @@ func processPod(pod *v1.Pod, kong *v1alpha1.Kong) error {
 		err = dealKongTarget(kong, upstream, fmt.Sprintf("%s:%d", ip, ports[0]), apiUri)
 		if err != nil {
 			logrus.Infof("Mark pod '%s' as verify failed", pod.Name)
-			podVerifiedFailed(pod, kong.Name)
+			podVerifiedFailed(pod, kong.Name, ip)
 			return err
 		}
 	}
 
 	logrus.Infof("Mark pod '%s' as verified", pod.Name)
 
-	return podVerified(pod, kong.Name)
+	return podVerified(pod, kong.Name, ip)
 }
 
 func dealKongTarget(kong *v1alpha1.Kong, upstreamName string, target string, apiUri string) error {
-	logrus.Infof("deal Kong target upstream: %v, target: %s, api: %s", upstreamName, target, apiUri)
+	logrus.Infof("deal Kong target upstream: %s, target: %s, api: %s", upstreamName, target, apiUri)
 	kongClient, err := kongcli.NewRESTClient(&rest.Config{
 		Host:     kong.Spec.KongURL,
 		Username: kong.Spec.Username,
@@ -270,7 +288,7 @@ func dealKongTarget(kong *v1alpha1.Kong, upstreamName string, target string, api
 			Target:   target,
 			Upstream: b.ID,
 		}
-		logrus.Infof("creating Kong Target %v for upstream %v", target, b.ID)
+		logrus.Infof("creating Kong Target %s for upstream %s", target.Target, b.ID)
 		_, res := kongClient.Targets().Create(target, upstreamName)
 		if res.StatusCode != http.StatusCreated {
 			logrus.Errorf("Unexpected error creating Kong Target: %v", res)
@@ -280,23 +298,40 @@ func dealKongTarget(kong *v1alpha1.Kong, upstreamName string, target string, api
 
 	//TODO add kongAnnotationApiUriKey
 	if apiUri != "" {
-		_, res := kongClient.Apis().Get(upstreamName)
-		if res.StatusCode == http.StatusNotFound {
-			api := &kongadminv1.Api{
-				Name:        upstreamName,
-				Hosts:       []string{},
-				Uris:        []string{apiUri},
-				Methods:     []string{"GET", "POST", "DELETE", "PUT", "PATCH", "OPTIONS"},
-				UpstreamUrl: fmt.Sprintf("http://%s", upstreamName),
-				StripUri:    true,
-			}
-			logrus.Infof("creating Kong apis %s for upstream %s", apiUri, b.ID)
-			_, res := kongClient.Apis().Create(api)
-			if res.StatusCode != http.StatusCreated {
-				logrus.Errorf("Unexpected error creating Kong Apis: %v", res)
-				return res.Error()
+		apits, err := kongClient.Apis().List(url.Values{
+			"upstream_url": []string{fmt.Sprintf("http://%s", upstreamName)},
+		})
+		if err != nil {
+			return err
+		}
+		foudurl := false
+		for _, api := range apits.Items {
+			if apiUri == api.Uris[0] {
+				foudurl = true
+				break
 			}
 		}
+		if foudurl == false {
+			return createKongApi(kongClient, upstreamName, apiUri)
+		}
+	}
+	return nil
+}
+
+func createKongApi(kongClient *kongcli.RestClient, upstreamName string, apiUri string) error {
+	api := &kongadminv1.Api{
+		Name:        upstreamName,
+		Hosts:       map[string]string{},
+		Uris:        []string{apiUri},
+		Methods:     []string{"GET", "POST", "DELETE", "PUT", "PATCH", "OPTIONS"},
+		UpstreamUrl: fmt.Sprintf("http://%s", upstreamName),
+		StripUri:    true,
+	}
+	logrus.Infof("creating Kong apis %s for upstream %s", apiUri, upstreamName)
+	_, res := kongClient.Apis().Create(api)
+	if res.StatusCode != http.StatusCreated {
+		logrus.Errorf("Unexpected error creating Kong Apis: %v", res)
+		return res.Error()
 	}
 	return nil
 }
@@ -394,17 +429,19 @@ func getAppCode(podName string) string {
 }
 
 // podVerified updates the pod annotations to mark it as verified Failed.
-func podVerifiedFailed(pod *v1.Pod, name string) error {
+func podVerifiedFailed(pod *v1.Pod, name string, ip string) error {
 	annotations := map[string]string{
 		name: kongAnnotationVerifiedFailed,
+		kongAnnotationPodIpKey: ip,
 	}
 	return annotatePod(pod, annotations)
 }
 
 // podVerified updates the pod annotations to mark it as verified.
-func podVerified(pod *v1.Pod, name string) error {
+func podVerified(pod *v1.Pod, name string, ip string) error {
 	annotations := map[string]string{
 		name: kongAnnotationVerified,
+		kongAnnotationPodIpKey: ip,
 	}
 
 	return annotatePod(pod, annotations)
